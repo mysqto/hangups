@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gpavlidi/go-hangups"
+	"github.com/mysqto/hangups"
 )
 
 func OrDie(e error) {

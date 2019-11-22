@@ -1,9 +1,9 @@
 package hangups
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -13,22 +13,34 @@ import (
 	"golang.org/x/oauth2"
 )
 
+var deviceName = oauth2.SetAuthURLParam("device_name", "hangups")
+
+// Session represent a hangouts session
 type Session struct {
 	RefreshToken string
 	Cookies      string
 	Sapisid      string
 }
 
+var (
+	scopes = []string{
+		"https://www.google.com/accounts/OAuthLogin",
+		"https://www.googleapis.com/auth/userinfo.email",
+	} // only need scope for logging in
+
+	oauthEndpoint = oauth2.Endpoint{
+		AuthURL:  "https://accounts.google.com/o/oauth2/programmatic_auth", // interactive user login
+		TokenURL: "https://accounts.google.com/o/oauth2/token",             // API endpoint to get access token from refresh token or auth code
+	}
+)
+
+// Init a session
 func (s *Session) Init() error {
 	oauthConf := &oauth2.Config{
-		ClientID:     "936475272427.apps.googleusercontent.com",              //iOS id
-		ClientSecret: "KWsJlkaMn1jGLxQpWxMnOox-",                             //iOS secret
-		Scopes:       []string{"https://www.google.com/accounts/OAuthLogin"}, //only need scope for logging in
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://accounts.google.com/o/oauth2/auth",  //interactive user login
-			TokenURL: "https://accounts.google.com/o/oauth2/token", //API endpoint to get access token from refresh token or auth code
-		},
-		RedirectURL: "urn:ietf:wg:oauth:2.0:oob", //dont redirect - show a page with the auth_code ready to be copied
+		ClientID:     "936475272427.apps.googleusercontent.com", // iOS id
+		ClientSecret: "KWsJlkaMn1jGLxQpWxMnOox-",                // iOS secret
+		Scopes:       scopes,
+		Endpoint:     oauthEndpoint,
 	}
 
 	client, err := s.getOauthClient(oauthConf)
@@ -54,9 +66,9 @@ func (s *Session) setCookies(client *http.Client) error {
 	defer resp.Body.Close()
 	uberauth, _ := ioutil.ReadAll(resp.Body)
 
-	mergeSessionUrl := fmt.Sprintf("https://accounts.google.com/MergeSession?service=mail&continue=http://www.google.com&uberauth=%s", uberauth)
+	mergeSessionURL := fmt.Sprintf("https://accounts.google.com/MergeSession?service=mail&continue=http://www.google.com&uberauth=%s", uberauth)
 	// url encode it
-	url, _ := url.Parse(mergeSessionUrl)
+	url, _ := url.Parse(mergeSessionURL)
 	q := url.Query()
 	url.RawQuery = q.Encode()
 	resp, err = client.Get(url.String())
@@ -66,7 +78,15 @@ func (s *Session) setCookies(client *http.Client) error {
 	defer resp.Body.Close()
 
 	u, _ := url.Parse("google.com")
-	requiredCookies := map[string]string{"SAPISID": "", "HSID": "", "SSID": "", "APISID": "", "SID": ""}
+	requiredCookies := map[string]string{
+		"APISID":  "",
+		"HSID":    "",
+		"NID":     "",
+		"SAPISID": "",
+		"SID":     "",
+		"SIDCC":   "",
+		"SSID":    "",
+	}
 	cookies := make([]string, 0)
 	for _, cookie := range client.Jar.Cookies(u) {
 		_, found := requiredCookies[cookie.Name]
@@ -99,7 +119,7 @@ func (s *Session) getOauthClient(oauthConf *oauth2.Config) (*http.Client, error)
 	}
 
 	s.RefreshToken = token.RefreshToken
-	oauthClient = oauthConf.Client(oauth2.NoContext, token)
+	oauthClient = oauthConf.Client(context.TODO(), token)
 
 	return oauthClient, nil
 }
@@ -107,22 +127,30 @@ func (s *Session) getOauthClient(oauthConf *oauth2.Config) (*http.Client, error)
 func tokenFromRefreshToken(oauthConf *oauth2.Config, refreshToken string) (*oauth2.Token, error) {
 	// generate an expired token with the refreshToken and let TokenSource refresh it
 	expiredToken := &oauth2.Token{RefreshToken: refreshToken, Expiry: time.Now().Add(-1 * time.Hour)}
-	tokenSource := oauthConf.TokenSource(nil, expiredToken)
+	tokenSource := oauthConf.TokenSource(context.TODO(), expiredToken)
 	return tokenSource.Token()
 }
 
 func tokenFromAuthCode(oauthConf *oauth2.Config) (*oauth2.Token, error) {
 	// construct url and encode queries properly
-	authUrl := oauthConf.AuthCodeURL("randomStateString", oauth2.AccessTypeOffline)
+	authURL := removeResponseTypeFromAuthURL(oauthConf.AuthCodeURL("", deviceName))
 
 	// ask the user for the auth token
-	log.Println("Can't find Refresh Token. Please navigate to the below address and paste the code\n")
-	fmt.Println(authUrl, "\n")
+	fmt.Println("Can't find Refresh Token. Please navigate to the below address and paste the code")
+	fmt.Println(authURL)
 	fmt.Print("Auth Code: ")
 	authCode := ""
 	fmt.Scanln(&authCode)
 
 	// got the auth_code. Exchange it with an access token
-	token, err := oauthConf.Exchange(oauth2.NoContext, authCode)
+	token, err := oauthConf.Exchange(context.TODO(), authCode)
 	return token, err
+}
+
+func removeResponseTypeFromAuthURL(uri string) string {
+	auth, _ := url.Parse(uri)
+	query := auth.Query()
+	query.Del("response_type")
+	auth.RawQuery = query.Encode()
+	return auth.String()
 }

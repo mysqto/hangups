@@ -10,9 +10,11 @@ Field and message name should generally match those used by Google, with the
 major exception that "Client" prefixes have been removed.
 
  */
-
 // proto2 is required because we need to be able to serialize default values:
 syntax = "proto2";
+package hangouts;
+
+import "embeds.proto";
 
 // Describes which Hangouts client is active.
 enum ActiveClientState {
@@ -77,11 +79,20 @@ message DeviceStatus {
   optional bool tablet = 3;
 }
 
+message LastSeen {
+  optional uint64 last_seen_timestamp_usec = 1;
+  optional uint64 usec_since_last_seen = 2;
+}
+
 message Presence {
   optional bool reachable = 1;
   optional bool available = 2;
   optional DeviceStatus device_status = 6;
-  optional MoodSetting mood_setting = 9;
+  optional MoodMessage mood_message = 9;
+  optional LastSeen last_seen = 10;
+
+  // TODO:
+  // optional CallType call_type = 5;
 }
 
 message PresenceResult {
@@ -130,7 +141,7 @@ enum NotificationLevel {
 
 message UserEventState {
   optional ParticipantId user_id = 1;
-  optional uint64 client_generated_id = 2;
+  optional string client_generated_id = 2;
   optional NotificationLevel notification_level = 3;
 }
 
@@ -179,81 +190,9 @@ enum ItemType {
   ITEM_TYPE_PLACE_V2 = 340;
 }
 
-// Google Plus photo that can be embedded in a chat message.
-message PlusPhoto {
-
-  // Metadata for displaying an image thumbnail.
-  message Thumbnail {
-
-    // URL to navigate to when thumbnail is selected (a Google Plus album
-    // page).
-    optional string url = 1;
-    // URL of thumbnail image.
-    optional string image_url = 4;
-    // Image width in pixels.
-    optional uint64 width_px = 10;
-    // Image height in pixels.
-    optional uint64 height_px = 11;
-  }
-
-  // Media type.
-  enum MediaType {
-    MEDIA_TYPE_UNKNOWN = 0;
-    MEDIA_TYPE_PHOTO = 1;
-    MEDIA_TYPE_ANIMATED_PHOTO = 4;
-  }
-
-  // Thumbnail.
-  optional Thumbnail thumbnail = 1;
-  // Owner obfuscated ID.
-  optional string owner_obfuscated_id = 2;
-  // Album ID.
-  optional string album_id = 3;
-  // Photo ID.
-  optional string photo_id = 4;
-  // URL of full-sized image.
-  optional string url = 6;
-  // URL of image thumbnail.
-  optional string original_content_url = 10;
-  // The media type.
-  optional MediaType media_type = 13;
-  // List of stream ID parameters.
-  repeated string stream_id = 14;
-
-}
-
-// Place that can be embedded in a chat message via Google Maps.
-message Place {
-
-  // Representative image of a place.
-  message RepresentativeImage {
-    // URL of image.
-    optional string url = 2;
-  }
-
-  // Google Maps URL pointing to the map coordinates.
-  optional string url = 1;
-  // Name of map location.
-  optional string name = 3;
-  // Representative image of the place (map with pin).
-  optional RepresentativeImage representative_image = 185;
-}
-
-// An item of some type embedded in a chat message.
-message EmbedItem {
-  // List of embedded item types in this message.
-  repeated ItemType type = 1;
-  // For photos this is not given, for maps, it's the URL of the map.
-  optional string id = 2;
-  // Embedded Google Plus photo.
-  optional PlusPhoto plus_photo = 27639957;
-  // Embedded Google Map of a place.
-  optional Place place = 35825640;
-}
-
 // An attachment for a chat message.
 message Attachment {
-  optional EmbedItem embed_item = 1;
+  optional EMEmbedClientItem embed_item = 1;
 }
 
 // Chat message content.
@@ -361,6 +300,8 @@ enum EventType {
   EVENT_TYPE_PLAN_MUTATION = 10;
   EVENT_TYPE_MMS = 11;
   EVENT_TYPE_DEPRECATED_12 = 12;
+  EVENT_TYPE_OBSERVED_EVENT = 13;
+  EVENT_TYPE_GROUP_LINK_SHARING_MODIFICATION = 14;
 }
 
 message HashModifier {
@@ -396,6 +337,7 @@ message Event {
   // Event version timestamp.
   optional uint64 event_version = 24;
   optional HashModifier hash_modifier = 26;
+  optional GroupLinkSharingModification group_link_sharing_modification = 31;
 }
 
 enum ConversationType {
@@ -408,9 +350,8 @@ enum ConversationType {
 
 message UserReadState {
   optional ParticipantId participant_id = 1;
+  // Timestamp of the user's last read message in the conversation.
   optional uint64 latest_read_timestamp = 2;
-
-  // TODO: is latest_read_timestamp always 0?
 }
 
 enum ConversationStatus {
@@ -441,7 +382,7 @@ enum DeliveryMediumType {
 message DeliveryMedium {
   optional DeliveryMediumType medium_type = 1;
   // Phone number to use for sending Google Voice messages.
-  optional Phone phone = 2;
+  optional PhoneNumber phone_number = 2;
 }
 
 message DeliveryMediumOption {
@@ -472,6 +413,7 @@ message UserConversationState {
 enum ParticipantType {
   PARTICIPANT_TYPE_UNKNOWN = 0;
   PARTICIPANT_TYPE_GAIA = 2;
+  PARTICIPANT_TYPE_GOOGLE_VOICE = 3;
 }
 
 enum InvitationStatus {
@@ -496,6 +438,7 @@ enum ForceHistory {
 enum NetworkType {
   NETWORK_TYPE_UNKNOWN = 0;
   NETWORK_TYPE_BABEL = 1;
+  NETWORK_TYPE_GOOGLE_VOICE = 2;
 }
 
 // A conversation between two or more users.
@@ -504,6 +447,7 @@ message Conversation {
   optional ConversationType type = 2;
   optional string name = 3;
   optional UserConversationState self_conversation_state = 4;
+  // Read state (watermark position) for every conversation participant.
   repeated UserReadState read_state = 8;
   // True if the conversation has an active Hangout.
   optional bool has_active_hangout = 9;
@@ -516,6 +460,7 @@ message Conversation {
   repeated ConversationParticipantData participant_data = 14;
   repeated NetworkType network_type = 18;
   optional ForceHistory force_history_state = 19;
+  optional GroupLinkSharingStatus group_link_sharing_status = 22;
 }
 
 message EasterEgg {
@@ -579,12 +524,14 @@ enum ClientId {
   CLIENT_ID_WEB_GMAIL = 6;
   // Hangouts Chrome app ("ultraviolet").
   CLIENT_ID_ULTRAVIOLET = 13;
+  // Hangouts web app (https://hangouts.google.com).
+  CLIENT_ID_WEB_HANGOUTS = 44;
 }
 
 // Build type of the client.
 enum ClientBuildType {
   BUILD_TYPE_UNKNOWN = 0;
-  // Web app.
+  // Web app (not used anymore?).
   BUILD_TYPE_PRODUCTION_WEB = 1;
   // Native app.
   BUILD_TYPE_PRODUCTION_APP = 3;
@@ -628,7 +575,7 @@ message ResponseHeader {
   optional ResponseStatus status = 1;
   optional string error_description = 2;
   optional string debug_url = 3;
-  optional uint64 request_trace_id = 4;
+  optional string request_trace_id = 4;
   optional uint64 current_server_time = 5;
 }
 
@@ -657,6 +604,8 @@ message EntityProperties {
   optional ProfileType type = 1;
   optional string display_name = 2;
   optional string first_name = 3;
+  // Photo URL with protocol scheme omitted (eg.
+  // "//lh.googleusercontent.com/...").
   optional string photo_url = 4;
   repeated string email = 5;
   repeated string phone = 6;
@@ -702,11 +651,20 @@ message EventContinuationToken {
   optional uint64 event_timestamp = 3;
 }
 
+// Specifies an entity to lookup by one of its properties.
 message EntityLookupSpec {
   optional string gaia_id = 1;
+  optional string email = 3;
+  // Phone number as string (eg. "+15551234567").
+  optional string phone = 4;
+  // Whether create a gaia_id for off-network contacts (eg. Google Voice contacts).
+  optional bool create_offnetwork_gaia = 6;
 
-  // TODO
+  // TODO: do these work?
+  //optional string jid = 2;
+  //optional string chat_id = 5;
 }
+
 
 // A type of binary configuration option.
 enum ConfigurationBitType {
@@ -776,9 +734,10 @@ enum ConfigurationBitType {
   CONFIGURATION_BIT_TYPE_UNKNOWN_31 = 31;
   CONFIGURATION_BIT_TYPE_UNKNOWN_32 = 32;
   CONFIGURATION_BIT_TYPE_UNKNOWN_33 = 33;
-  CONFIGURATION_BIT_TYPE_UNKNOWN_34 = 34;
+  CONFIGURATION_BIT_TYPE_DESKTOP_AUTO_EMOJI_CONVERSION_ENABLED = 34;
   CONFIGURATION_BIT_TYPE_UNKNOWN_35 = 35;
   CONFIGURATION_BIT_TYPE_UNKNOWN_36 = 36;
+  CONFIGURATION_BIT_TYPE_DESKTOP_COMPACT_MODE_ENABLED = 38;
 }
 
 message ConfigurationBit {
@@ -815,7 +774,12 @@ message RichPresenceEnabledState {
 enum FieldMask {
   FIELD_MASK_REACHABLE = 1;
   FIELD_MASK_AVAILABLE = 2;
+  FIELD_MASK_MOOD = 3;
+  FIELD_MASK_IN_CALL = 6;
   FIELD_MASK_DEVICE = 7;
+  FIELD_MASK_LAST_SEEN = 10;
+
+  // TODO: 3,4,8?
 }
 
 message DesktopOffSetting {
@@ -958,20 +922,29 @@ message PhoneNumber {
 message SuggestedContactGroupHash {
   // Number of results to return from this group.
   optional uint64 max_results = 1;
-  // A 4-byte hash.
+  // An optional 4-byte hash. If this matches the server's hash, no results
+  // will be sent.
   optional bytes hash = 2;
 }
 
 message SuggestedContact {
+  // The contact's entity.
   optional Entity entity = 1;
+  // The contact's invitation status.
   optional InvitationStatus invitation_status = 2;
 }
 
 message SuggestedContactGroup {
+  // True if the request's hash matched and no contacts will be included.
   optional bool hash_matched = 1;
-  // A 4-byte hash.
+  // A 4-byte hash which can be used in subsequent requests.
   optional bytes hash = 2;
+  // List of contacts in this group.
   repeated SuggestedContact contact = 3;
+}
+
+message GroupLinkSharingModification {
+  optional GroupLinkSharingStatus new_status = 1;
 }
 
 // ----------------------------------------------------------------------------
@@ -1118,10 +1091,8 @@ message BlockNotification {
 }
 
 message SetNotificationSettingNotification {
+  repeated ConfigurationBit configuration_bit = 1;
   optional DesktopSoundSetting desktop_sound_setting = 2;
-
-  // TODO
-  // convert text to emoji setting
 }
 
 message RichPresenceEnabledStateNotification {
@@ -1142,6 +1113,17 @@ enum OffnetworkAddressType {
 message OffnetworkAddress {
   optional OffnetworkAddressType type = 1;
   optional string email = 3;
+}
+
+message EntityResult {
+  optional EntityLookupSpec lookup_spec = 1;
+  repeated Entity entity = 2;
+}
+
+enum GroupLinkSharingStatus {
+  GROUP_LINK_SHARING_STATUS_UNKNOWN = 0;
+  GROUP_LINK_SHARING_STATUS_ON = 1;
+  GROUP_LINK_SHARING_STATUS_OFF = 2;
 }
 
 // ----------------------------------------------------------------------------
@@ -1198,12 +1180,15 @@ message EasterEggResponse {
 message GetConversationRequest {
   optional RequestHeader request_header = 1;
   optional ConversationSpec conversation_spec = 2;
+  // Whether the ConversationState in the response should include metadata
+  // other than the conversation ID (default true).
+  optional bool include_conversation_metadata = 3;
+  // Whether to include list of events in the response (default true).
   optional bool include_event = 4;
   optional uint64 max_events_per_conversation = 6;
   optional EventContinuationToken event_continuation_token = 7;
 
   // TODO:
-  // include_conversation_metadata? = 3;
   // unknown = 5;
 }
 
@@ -1224,27 +1209,49 @@ message GetEntityByIdRequest {
 
 message GetEntityByIdResponse {
   optional ResponseHeader response_header = 1;
+  // Resulting entities of PARTICIPANT_TYPE_GAIA only.
   repeated Entity entity = 2;
+  // All resulting entities.
+  repeated EntityResult entity_result = 3;
+}
 
-  // TODO
+message GetGroupConversationUrlRequest {
+  optional RequestHeader request_header = 1;
+  // Conversation to retrieve URL for.
+  optional ConversationId conversation_id = 2;
+}
+
+message GetGroupConversationUrlResponse {
+  optional ResponseHeader response_header = 1;
+  // URL for others to join conversation.
+  optional string group_conversation_url = 2;
 }
 
 message GetSuggestedEntitiesRequest {
   optional RequestHeader request_header = 1;
+  // Max number of non-grouped entities to return.
+  optional uint64 max_count = 4;
+  // Optional hash for "favorites" contact group.
   optional SuggestedContactGroupHash favorites = 8;
+  // Optional hash for "contacts you hangout with" contact group.
   optional SuggestedContactGroupHash contacts_you_hangout_with = 9;
+  // Optional hash for "other contacts on hangouts" contact group.
   optional SuggestedContactGroupHash other_contacts_on_hangouts = 10;
+  // Optional hash for "other contacts" contact group.
   optional SuggestedContactGroupHash other_contacts = 11;
+  // Optional hash for "dismissed contacts" contact group.
   optional SuggestedContactGroupHash dismissed_contacts = 12;
+  // Optional hash for "pinned favorites" contact group.
   optional SuggestedContactGroupHash pinned_favorites = 13;
 
   // TODO: possible other fields:
-  // unknown bytes = 2;
-  // unknown bytes = 3;
-  // unknown int/enum = 4;
-  // unknown bool = 5;
-  // repeated ParticipantId unknown = 6;
+  // repeated EntityID given_entity_id = 2
+  // repeated EntityFilterType entity_type_filter = 3;
+  // optional bool include_availability = 5;
+  // repeated ParticipantId given_entity_id = 6
   // unknown bool = 7;
+  // unknown bool = 14;
+  // unknown repeated int = 15;
 }
 
 message GetSuggestedEntitiesResponse {
@@ -1301,6 +1308,8 @@ message QueryPresenceResponse {
 
 message RemoveUserRequest {
   optional RequestHeader request_header = 1;
+  // Optional participant to remove from conversation, yourself if not given.
+  optional ParticipantId participant_id = 3;
   optional EventRequestHeader event_request_header = 5;
 }
 
@@ -1335,13 +1344,18 @@ message SearchEntitiesResponse {
   repeated Entity entity = 2;
 }
 
+message Location {
+  optional EMPlace place = 1;
+}
+
 message SendChatMessageRequest {
   optional RequestHeader request_header = 1;
   repeated EventAnnotation annotation = 5;
   optional MessageContent message_content = 6;
   optional ExistingMedia existing_media = 7;
   optional EventRequestHeader event_request_header = 8;
-
+  optional ParticipantId user_id = 9;
+  optional Location location = 10;
   // TODO: incomplete
 }
 
@@ -1351,6 +1365,17 @@ message SendChatMessageResponse {
 
   // TODO:
   // unknown [] = 4;
+}
+
+message ModifyOTRStatusRequest {
+  optional RequestHeader request_header = 1;
+  optional OffTheRecordStatus otr_status = 3;
+  optional EventRequestHeader event_request_header = 5;
+}
+
+message ModifyOTRStatusResponse {
+  optional ResponseHeader response_header = 1;
+  optional Event created_event = 4;
 }
 
 message SendOffnetworkInvitationRequest {
@@ -1414,6 +1439,22 @@ message SetFocusResponse {
   optional uint64 timestamp = 2;
 }
 
+message SetGroupLinkSharingEnabledRequest {
+  optional RequestHeader request_header = 1;
+  optional EventRequestHeader event_request_header = 2;
+  // New group link sharing status.
+  optional GroupLinkSharingStatus group_link_sharing_status = 4;
+
+}
+
+message SetGroupLinkSharingEnabledResponse {
+  optional ResponseHeader response_header = 1;
+  // Created event of type EVENT_TYPE_GROUP_LINK_SHARING_MODIFICATION.
+  optional Event created_event = 2;
+  // Updated conversation.
+  optional Conversation updated_conversation = 3;
+}
+
 // Allows setting one or more of the included presence-related settings.
 message SetPresenceRequest {
   optional RequestHeader request_header = 1;
@@ -1457,6 +1498,9 @@ message SyncAllNewEventsResponse {
 
 message SyncRecentConversationsRequest {
   optional RequestHeader request_header = 1;
+  // Timestamp used for pagination, returns most recent conversations if not
+  // given.
+  optional uint64 last_event_timestamp = 2;
   optional uint64 max_conversations = 3;
   optional uint64 max_events_per_conversation = 4;
   repeated SyncFilter sync_filter = 5;
@@ -1466,6 +1510,7 @@ message SyncRecentConversationsResponse {
   optional ResponseHeader response_header = 1;
   optional uint64 sync_timestamp = 2;
   repeated ConversationState conversation_state = 3;
+  optional uint64 continuation_end_timestamp = 4;
 }
 
 message UpdateWatermarkRequest {
