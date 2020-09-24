@@ -51,7 +51,7 @@ func (c *Client) APIRequest(endpointURL, responseType string, headers map[string
 	urlParams.Set("key", apiKey)
 	uri.RawQuery = urlParams.Encode()
 
-	req, err := http.NewRequest("post", uri.String(), bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, uri.String(), bytes.NewReader(payload))
 	for headerKey, headerVal := range headers {
 		req.Header.Set(headerKey, headerVal)
 	}

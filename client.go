@@ -16,6 +16,7 @@ import (
 
 const (
 	imageUploadURL = "https://docs.google.com/upload/photos/resumable"
+	baseURL        = "https://clients6.google.com"
 )
 
 // Client is a hangouts client
@@ -91,9 +92,13 @@ func getLookupSpec(id string) *hangouts.EntityLookupSpec {
 func (c *Client) NewRequestHeaders() *hangouts.RequestHeader {
 	version := "hangups-0.0.1"
 	language := "en"
+	clientID := hangouts.ClientId_CLIENT_ID_WEB_HANGOUTS
 
 	return &hangouts.RequestHeader{
-		ClientVersion:    &hangouts.ClientVersion{MajorVersion: &version},
+		ClientVersion: &hangouts.ClientVersion{
+			ClientId:     &clientID,
+			MajorVersion: &version,
+		},
 		ClientIdentifier: &hangouts.ClientIdentifier{Resource: nil}, //use request_header.client_identifier.resource
 		LanguageCode:     &language,
 	}
@@ -126,7 +131,7 @@ func (c *Client) ProtobufAPIRequest(apiEndpoint string, requestStruct, responseS
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("https://clients6.google.com/chat/v1/%s", apiEndpoint)
+	url := fmt.Sprintf("%s/chat/v1/%s", baseURL, apiEndpoint)
 	headers := map[string]string{
 		"Content-Type": "application/x-protobuf",
 	}
@@ -308,7 +313,7 @@ func (c *Client) GetSuggestedEntities(maxCount uint64) (*hangouts.GetSuggestedEn
 func (c *Client) QueryPresence(gaiaID string) (*hangouts.QueryPresenceResponse, error) {
 	request := &hangouts.QueryPresenceRequest{
 		RequestHeader: c.NewRequestHeaders(),
-		ParticipantId: []*hangouts.ParticipantId{&hangouts.ParticipantId{GaiaId: &gaiaID, ChatId: &gaiaID}},
+		ParticipantId: []*hangouts.ParticipantId{{GaiaId: &gaiaID, ChatId: &gaiaID}},
 		FieldMask:     []hangouts.FieldMask{hangouts.FieldMask_FIELD_MASK_REACHABLE, hangouts.FieldMask_FIELD_MASK_AVAILABLE, hangouts.FieldMask_FIELD_MASK_DEVICE},
 	}
 	response := &hangouts.QueryPresenceResponse{}
@@ -835,7 +840,7 @@ func (c *Client) SendImage(to, image string) error {
 	return c.sendMessage(to, "", photo.ImageID)
 }
 
-// SendImage send image to a user or group
+// SendPhotoID send image to a user or group
 // to can be phoneNumber, email chatID/GaiaID or conversation ID
 // photoID is a photo id from hangouts message
 func (c *Client) SendPhotoID(to, photoID string) error {
